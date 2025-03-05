@@ -6,16 +6,46 @@
 #include <stdlib.h>
 #include <string.h>
 
+//-------------------------
+// Constants & Prototypes
+//-------------------------
+
 #define PI 3.14159265358979323846
 #define MAX_LAYERS 20
+#define TEXT_OFFSET_X 3.0f
+#define TOP_Y 8.0f
+#define LAYER_SPACING 2.0f
+
+// Function prototypes
+void SetupConsole(void);
+void SetupNetwork(void);
+void SetupAlexNet(void);
+void SetupVGG16(void);
+void SetupResNet18(void);
+void SetupCustomNetwork(void);
+
+void SetupPixelFormatForDC(HDC hDC);
+void InitOpenGL(void);
+
+void DrawBox(float cx, float cy, float cz, float width, float height, float depth);
+void DrawSphere(float x, float y, float z, float radius);
+void DrawArrow(float x1, float y1, float z1, float x2, float y2, float z2);
+void DrawFullyConnectedLayer(float y, int neuronCount);
+void RenderText(const char* text, float x, float y, float z);
+
+void DrawNetwork(void);
+void RenderScene(void);
+
+// Window procedure
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 //-------------------------
 // Data Structures
 //-------------------------
 
 typedef enum {
-    LAYER_BOX,   // Representing input/conv layers drawn as a box
-    LAYER_FC     // Representing fully connected layers drawn as rows of spheres
+    LAYER_BOX,   // Representing input/conv layers as boxes
+    LAYER_FC     // Representing fully-connected layers as rows of spheres
 } LayerType;
 
 typedef struct {
@@ -31,14 +61,14 @@ typedef struct {
         } fc;
     };
     float color[3];  // RGB color
-    char label[64];  // Text label for this layer
+    char label[64];  // Text label for the layer
 } Layer;
 
 Layer networkLayers[MAX_LAYERS];
 int numLayers = 0;
 
 //-------------------------
-// Global Variables for OpenGL and Window
+// Global Variables for OpenGL & Window
 //-------------------------
 
 HGLRC hRC = NULL;
@@ -46,19 +76,19 @@ HDC   hDC = NULL;
 HWND  hWnd = NULL;
 HINSTANCE hInstance;
 
-GLUquadric* quadric = NULL;  // For drawing spheres and cones
-GLuint baseList = 0;          // Base display list for font bitmaps
+GLUquadric* quadric = NULL; // For drawing spheres and cones
+GLuint baseList = 0;         // Display list base for font bitmaps
 
-// Global variables for mouse control
+// Global mouse control variables
 float rotX = 0.0f, rotY = 0.0f;
 int mouseDown = 0;
 int lastMouseX = 0, lastMouseY = 0;
 
 //-------------------------
-// Console Setup for User Input
+// Console Setup
 //-------------------------
 
-void SetupConsole() {
+void SetupConsole(void) {
     AllocConsole();
     freopen("CONIN$", "r", stdin);
     freopen("CONOUT$", "w", stdout);
@@ -70,9 +100,9 @@ void SetupConsole() {
 //-------------------------
 
 // AlexNet (simplified schematic)
-void SetupAlexNet() {
+void SetupAlexNet(void) {
     numLayers = 9;
-    // Layer 0: Input (box)
+    // Layer 0: Input
     networkLayers[0].type = LAYER_BOX;
     networkLayers[0].box.width = 2.0f;
     networkLayers[0].box.height = 1.0f;
@@ -80,7 +110,7 @@ void SetupAlexNet() {
     networkLayers[0].color[0] = 1.0f; networkLayers[0].color[1] = 1.0f; networkLayers[0].color[2] = 1.0f;
     strcpy(networkLayers[0].label, "Input");
     
-    // Layer 1: Conv1 (box)
+    // Layer 1: Conv1
     networkLayers[1].type = LAYER_BOX;
     networkLayers[1].box.width = 2.0f;
     networkLayers[1].box.height = 1.0f;
@@ -88,7 +118,7 @@ void SetupAlexNet() {
     networkLayers[1].color[0] = 1.0f; networkLayers[1].color[1] = 0.0f; networkLayers[1].color[2] = 0.0f;
     strcpy(networkLayers[1].label, "Conv1");
     
-    // Layer 2: Conv2 (box)
+    // Layer 2: Conv2
     networkLayers[2].type = LAYER_BOX;
     networkLayers[2].box.width = 1.8f;
     networkLayers[2].box.height = 1.0f;
@@ -96,7 +126,7 @@ void SetupAlexNet() {
     networkLayers[2].color[0] = 0.0f; networkLayers[2].color[1] = 1.0f; networkLayers[2].color[2] = 0.0f;
     strcpy(networkLayers[2].label, "Conv2");
     
-    // Layer 3: Conv3 (box)
+    // Layer 3: Conv3
     networkLayers[3].type = LAYER_BOX;
     networkLayers[3].box.width = 1.6f;
     networkLayers[3].box.height = 1.0f;
@@ -104,7 +134,7 @@ void SetupAlexNet() {
     networkLayers[3].color[0] = 0.0f; networkLayers[3].color[1] = 0.0f; networkLayers[3].color[2] = 1.0f;
     strcpy(networkLayers[3].label, "Conv3");
     
-    // Layer 4: Conv4 (box)
+    // Layer 4: Conv4
     networkLayers[4].type = LAYER_BOX;
     networkLayers[4].box.width = 1.4f;
     networkLayers[4].box.height = 1.0f;
@@ -112,7 +142,7 @@ void SetupAlexNet() {
     networkLayers[4].color[0] = 1.0f; networkLayers[4].color[1] = 0.0f; networkLayers[4].color[2] = 1.0f;
     strcpy(networkLayers[4].label, "Conv4");
     
-    // Layer 5: Conv5 (box)
+    // Layer 5: Conv5
     networkLayers[5].type = LAYER_BOX;
     networkLayers[5].box.width = 1.2f;
     networkLayers[5].box.height = 1.0f;
@@ -120,19 +150,19 @@ void SetupAlexNet() {
     networkLayers[5].color[0] = 0.0f; networkLayers[5].color[1] = 1.0f; networkLayers[5].color[2] = 1.0f;
     strcpy(networkLayers[5].label, "Conv5");
     
-    // Layer 6: FC6 (fully connected)
+    // Layer 6: FC6
     networkLayers[6].type = LAYER_FC;
     networkLayers[6].fc.neuronCount = 5;
     networkLayers[6].color[0] = 1.0f; networkLayers[6].color[1] = 1.0f; networkLayers[6].color[2] = 0.0f;
     strcpy(networkLayers[6].label, "FC6");
     
-    // Layer 7: FC7 (fully connected)
+    // Layer 7: FC7
     networkLayers[7].type = LAYER_FC;
     networkLayers[7].fc.neuronCount = 5;
     networkLayers[7].color[0] = 1.0f; networkLayers[7].color[1] = 0.5f; networkLayers[7].color[2] = 0.0f;
     strcpy(networkLayers[7].label, "FC7");
     
-    // Layer 8: FC8 (fully connected)
+    // Layer 8: FC8
     networkLayers[8].type = LAYER_FC;
     networkLayers[8].fc.neuronCount = 5;
     networkLayers[8].color[0] = 0.5f; networkLayers[8].color[1] = 0.5f; networkLayers[8].color[2] = 0.5f;
@@ -140,7 +170,7 @@ void SetupAlexNet() {
 }
 
 // VGG16 (simplified schematic)
-void SetupVGG16() {
+void SetupVGG16(void) {
     numLayers = 9;
     strcpy(networkLayers[0].label, "Input");
     networkLayers[0].type = LAYER_BOX;
@@ -201,7 +231,7 @@ void SetupVGG16() {
 }
 
 // ResNet18 (simplified schematic)
-void SetupResNet18() {
+void SetupResNet18(void) {
     numLayers = 7;
     strcpy(networkLayers[0].label, "Input");
     networkLayers[0].type = LAYER_BOX;
@@ -251,11 +281,8 @@ void SetupResNet18() {
     networkLayers[6].color[0] = 1.0f; networkLayers[6].color[1] = 1.0f; networkLayers[6].color[2] = 0.0f;
 }
 
-//-------------------------
-// Custom Network Setup Function
-//-------------------------
-
-void SetupCustomNetwork() {
+// Custom network: label each layer as "Layer i"
+void SetupCustomNetwork(void) {
     printf("Enter the number of layers (max %d): ", MAX_LAYERS);
     scanf("%d", &numLayers);
     if(numLayers > MAX_LAYERS) numLayers = MAX_LAYERS;
@@ -283,16 +310,15 @@ void SetupCustomNetwork() {
               &networkLayers[i].color[0], 
               &networkLayers[i].color[1], 
               &networkLayers[i].color[2]);
-        // For custom networks, simply label each layer as "Layer i"
         sprintf(networkLayers[i].label, "Layer %d", i);
     }
 }
 
 //-------------------------
-// Master Network Setup (Menu)
+// Master Network Setup Menu
 //-------------------------
 
-void SetupNetwork() {
+void SetupNetwork(void) {
     int choice;
     printf("Choose network option:\n");
     printf("1. Predefined: AlexNet\n");
@@ -312,7 +338,7 @@ void SetupNetwork() {
 }
 
 //-------------------------
-// OpenGL Setup and Utility Functions
+// OpenGL Setup & Utility Functions
 //-------------------------
 
 void SetupPixelFormatForDC(HDC hDC) {
@@ -329,7 +355,7 @@ void SetupPixelFormatForDC(HDC hDC) {
     SetPixelFormat(hDC, pixelFormat, &pfd);
 }
 
-void InitOpenGL() {
+void InitOpenGL(void) {
     glEnable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -337,13 +363,20 @@ void InitOpenGL() {
     glMatrixMode(GL_MODELVIEW);
     quadric = gluNewQuadric();
     
-    // Create font display lists for text rendering.
+    // Create display lists for font bitmaps.
     baseList = glGenLists(96);
     HFONT hFont = CreateFont(-16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                              ANSI_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, 
                              ANTIALIASED_QUALITY, FF_DONTCARE | DEFAULT_PITCH, "Arial");
+    if(!hFont) {
+        printf("Error: Failed to create font.\n");
+        exit(EXIT_FAILURE);
+    }
     SelectObject(hDC, hFont);
-    wglUseFontBitmaps(hDC, 32, 96, baseList);
+    if(!wglUseFontBitmaps(hDC, 32, 96, baseList)) {
+        printf("Error: wglUseFontBitmaps failed.\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 //-------------------------
@@ -427,19 +460,28 @@ void DrawArrow(float x1, float y1, float z1, float x2, float y2, float z2) {
     glPopMatrix();
 }
 
+
 void DrawFullyConnectedLayer(float y, int neuronCount) {
     float spacing = 1.0f;
     float startX = -((neuronCount - 1) * spacing) / 2.0f;
+    float zOffset = 0.5f;
     for (int i = 0; i < neuronCount; i++) {
         float x = startX + i * spacing;
-        DrawSphere(x, y, 0.0f, 0.3f);
-        if (i < neuronCount - 1) {
-            DrawArrow(x, y, 0.0f, x + spacing, y, 0.0f);
+        float z = (i % 2 == 0) ? -zOffset : zOffset;
+        DrawSphere(x, y, z, 0.3f);
+    }
+    for (int i = 0; i < neuronCount; i++) {
+        for (int j = 0; j < neuronCount; j++) {
+            float x1 = startX + i * spacing;
+            float z1 = (i % 2 == 0) ? -zOffset : zOffset;
+            float x2 = startX + j * spacing;
+            float z2 = (j % 2 == 0) ? -zOffset : zOffset;
+            DrawArrow(x1, y, z1, x2, y - LAYER_SPACING, z2);
         }
     }
 }
 
-// Render text at the specified 3D position.
+// Render text at the given 3D position.
 void RenderText(const char* text, float x, float y, float z) {
     glRasterPos3f(x, y, z);
     glPushAttrib(GL_LIST_BIT);
@@ -452,14 +494,12 @@ void RenderText(const char* text, float x, float y, float z) {
 // Network Drawing
 //-------------------------
 
-void DrawNetwork() {
-    float topY = 8.0f;
-    float spacing = 2.0f;
-    float prevY = topY;
+void DrawNetwork(void) {
+    float prevY = TOP_Y;
     int first = 1;
     for (int i = 0; i < numLayers; i++) {
-        float y = topY - i * spacing;
-        // Draw arrow between layer centers.
+        float y = TOP_Y - i * LAYER_SPACING;
+        // Draw arrow connecting centers of consecutive layers.
         if (!first) {
             DrawArrow(0.0f, prevY, 0.0f, 0.0f, y, 0.0f);
         } else {
@@ -467,27 +507,29 @@ void DrawNetwork() {
         }
         if (networkLayers[i].type == LAYER_BOX) {
             glColor3fv(networkLayers[i].color);
-            DrawBox(0.0f, y, 0.0f, networkLayers[i].box.width, networkLayers[i].box.height, networkLayers[i].box.depth);
+            DrawBox(0.0f, y, 0.0f,
+                    networkLayers[i].box.width,
+                    networkLayers[i].box.height,
+                    networkLayers[i].box.depth);
         } else if (networkLayers[i].type == LAYER_FC) {
             glColor3fv(networkLayers[i].color);
             DrawFullyConnectedLayer(y, networkLayers[i].fc.neuronCount);
         }
-        // Render the text label to the right of the layer.
-        // Adjust the x-offset as needed; here we use x = 3.0.
+        // Render label near the layer.
         glColor3f(1.0f, 1.0f, 1.0f); // White text
-        RenderText(networkLayers[i].label, 3.0f, y, 0.0f);
+        RenderText(networkLayers[i].label, TEXT_OFFSET_X, y, 0.0f);
         prevY = y;
     }
 }
 
 //-------------------------
-// Rendering and Window Handling
+// Rendering & Window Handling
 //-------------------------
 
-void RenderScene() {
+void RenderScene(void) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glLoadIdentity();
-    // Top–down view.
+    // Set a top-down view.
     gluLookAt(0.0, 20.0, 0.0,
               0.0, 0.0, 0.0,
               0.0, 0.0, -1.0);
@@ -545,7 +587,7 @@ int WINAPI WinMain(HINSTANCE hInstanceCurrent, HINSTANCE hPrevInstance, LPSTR lp
     wc.lpfnWndProc = WndProc;
     wc.hInstance = hInstanceCurrent;
     wc.lpszClassName = "OpenGLWindowClass";
-    if(!RegisterClass(&wc)) {
+    if (!RegisterClass(&wc)) {
         MessageBox(NULL, "Failed to register window class.", "Error", MB_OK | MB_ICONERROR);
         return 0;
     }
@@ -553,7 +595,7 @@ int WINAPI WinMain(HINSTANCE hInstanceCurrent, HINSTANCE hPrevInstance, LPSTR lp
     hInstance = hInstanceCurrent;
     hWnd = CreateWindow("OpenGLWindowClass", "3D Network Visualization", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                         100, 100, 800, 600, NULL, NULL, hInstance, NULL);
-    if(!hWnd) {
+    if (!hWnd) {
         MessageBox(NULL, "Failed to create window.", "Error", MB_OK | MB_ICONERROR);
         return 0;
     }
@@ -567,9 +609,9 @@ int WINAPI WinMain(HINSTANCE hInstanceCurrent, HINSTANCE hPrevInstance, LPSTR lp
     
     MSG msg;
     BOOL done = FALSE;
-    while(!done) {
-        while(PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if(msg.message == WM_QUIT)
+    while (!done) {
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT)
                 done = TRUE;
             TranslateMessage(&msg);
             DispatchMessage(&msg);
